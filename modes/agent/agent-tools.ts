@@ -1,7 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { ToolExecutor } from "./tool-executor"
-import { path } from "@clack/prompts";
 import { executeShell } from "./tools/shell-tool";
 
 export function createAgentTools(executor: ToolExecutor) {
@@ -87,11 +86,12 @@ export function createAgentTools(executor: ToolExecutor) {
   
       execute_shell: tool({
         description:
-          "Queue a shell command to run in the workspace after user approval. Use with care.",
+          "Run a shell command in the workspace. Approval is enforced by shell risk policy.",
         inputSchema: z.object({
-          command: z.string().describe("Single command; runs with shell: true"),
+          command: z.string().describe("Single shell command to execute"),
         }),
-        execute: async ({ command }) => executor.queueShell(command),
+        execute: async ({ command }) =>
+          executeShell(command, { cwd: process.cwd() }),
       }),
   
       list_skills: tool({
@@ -110,15 +110,6 @@ export function createAgentTools(executor: ToolExecutor) {
         execute: async ({ path: p }) => executor.readSkill(p),
 
         
-      }),
-      shell_execute: tool({
-        description: "Run shell commands",
-        inputSchema: z.object({
-          command: z.string(),
-        }),
-        execute: async ({ command }) => {
-          return await executeShell(command);
-        },
       })
     };
   }
