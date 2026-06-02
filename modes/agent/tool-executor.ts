@@ -67,7 +67,7 @@ export class ToolExecutor {
             throw new Error(`${op}: path is excluded by policy: ${rel}`);
         }
     }
-    getEffectiveText(rel: string): string | undefined {
+    getEffectiveText(rel: string): string | undefined { 
         const key = this.norm(rel);
         if (this.deleted.has(key)) return undefined;
         if (this.overlay.has(key)) return this.overlay.get(key);

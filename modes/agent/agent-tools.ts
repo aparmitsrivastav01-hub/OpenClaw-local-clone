@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import type { ToolExecutor } from "./tool-executor"
 import { path } from "@clack/prompts";
+import { executeShell } from "./tools/shell-tool";
 
 export function createAgentTools(executor: ToolExecutor) {
     return {
@@ -107,6 +108,17 @@ export function createAgentTools(executor: ToolExecutor) {
           path: z.string(),
         }),
         execute: async ({ path: p }) => executor.readSkill(p),
+
+        
       }),
+      shell_execute: tool({
+        description: "Run shell commands",
+        inputSchema: z.object({
+          command: z.string(),
+        }),
+        execute: async ({ command }) => {
+          return await executeShell(command);
+        },
+      })
     };
   }
