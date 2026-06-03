@@ -16,7 +16,7 @@
     "@clack/core": "^1.4.0",
     "@clack/prompts": "^1.5.0",
     "@mendable/firecrawl-js": "^4.25.1",
-    "@openrouter/ai-sdk-provider": "^2.9.0",
+    "ai-sdk-ollama": "^3.8.4",
     "@types/marked-terminal": "^6.1.1",
     "@types/node": "^25.9.1",
     "ai": "^6.0.193",
