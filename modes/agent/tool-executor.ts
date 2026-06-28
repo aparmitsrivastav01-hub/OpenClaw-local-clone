@@ -401,8 +401,10 @@ export class ToolExecutor {
         )) {
             const cmd = a.details.command;
             if (!cmd) continue;
+            // SECURITY: Removed shell: true to prevent command injection
+            // Commands are now executed directly without shell interpretation
             const r = spawnSync(cmd, {
-                shell: true,
+                shell: false, // shell ko change karra h for secuirty reasons 
                 cwd: this.config.codebasePath,
                 encoding: "utf8",
                 maxBuffer: 16 * 1024 * 1024,

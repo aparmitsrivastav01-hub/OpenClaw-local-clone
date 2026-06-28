@@ -79,11 +79,22 @@ function asMd(question: string, answer: string): string {
     return `# Ask Mode\n\n## Question\n\n${question.trim()}\n\n## Answer\n\n${answer.trim()}\n`;
 }
 
-export async function runAskMode() {
-    console.log(chalk.bold("\n? Ask Mode\n"))
+export interface AskModeOptions {
+    input?: string;
+    fromConversation?: boolean;
+}
 
-    const question = await text({ message: "Wahat dou want to ask?" });
-    if (isCancel(question) || !question.trim()) return;
+export async function runAskMode(options?: AskModeOptions): Promise<string> {
+    if (!options?.fromConversation) {
+        console.log(chalk.bold("\n? Ask Mode\n"));
+    }
+
+    let question = options?.input;
+    if (!question) {
+        const prompted = await text({ message: "What do you want to ask?" });
+        if (isCancel(prompted) || !prompted.trim()) return "";
+        question = prompted.trim();
+    }
 
     const config = defaultAgentConfig();
     config.tools.allowFileCreation = true;
@@ -105,15 +116,17 @@ export async function runAskMode() {
         tools,
     });
 
-    const result = await agent.generate({ prompt: question.trim() });
+    const result = await agent.generate({ prompt: question });
     const answer = result.text?.trim() || "(no answer)";
     console.log("\n" + renderTerminalMarkdown(answer) + "\n");
+
+    if (options?.fromConversation) return answer;
 
     const wantsSave = await confirm({
         message: "Save this to a .md file in the current directory?",
         initialValue: false,
     });
-    if (isCancel(wantsSave) || !wantsSave) return;
+    if (isCancel(wantsSave) || !wantsSave) return "";
 
     const filename = await text({
         message: "Filename",
@@ -126,12 +139,16 @@ export async function runAskMode() {
         },
     })
 
-    if (isCancel(filename)) return;
+    if (isCancel(filename)) return "";
 
     executor.createFile(filename, asMd(question, answer));
     const ok = await runApprovalFlow(tracker);
-    if (!ok) return executor.clearStaging();
+    if (!ok) {
+        executor.clearStaging();
+        return "";
+    }
 
     executor.applyApprovedFromTracker();
     executor.clearStaging();
+    return answer;
 }

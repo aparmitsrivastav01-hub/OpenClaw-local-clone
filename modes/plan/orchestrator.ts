@@ -19,23 +19,36 @@ function stepPrompt(goal: string, step: PlanStep): string {
 }
 
 
-export async function runPlanMode(): Promise<void> {
-    console.log(chalk.bold("\n🧭 Plan Mode\n"));
-  
-    const goal = await text({ message: "What is your goal?" });
-    if (isCancel(goal) || !goal.trim()) return;
+export interface PlanModeOptions {
+    input?: string;
+    fromConversation?: boolean;
+}
+
+export async function runPlanMode(options?: PlanModeOptions): Promise<string> {
+    if (!options?.fromConversation) {
+        console.log(chalk.bold("\n🧭 Plan Mode\n"));
+    }
+
+    let goal = options?.input;
+    if (!goal) {
+        const prompted = await text({ message: "What is your goal?" });
+        if (isCancel(prompted) || !prompted.trim()) return "";
+        goal = prompted.trim();
+    }
   
     const plan = await generatePlan(goal);
   
     printPlan(plan);
   
     const selected = await selectSteps(plan);
-    if (selected.length === 0) return;
+    if (selected.length === 0) return "";
   
     const proceed = await confirm({
       message: `Execute ${selected.length} step(s)`,
       initialValue: true,
     });
+
+    if (isCancel(proceed) || !proceed) return "";
   
     const config = defaultAgentConfig();
     const tracker = new ActionTracker();
@@ -46,6 +59,8 @@ export async function runPlanMode(): Promise<void> {
       ...createAgentTools(executor),
       ...createWebTools(tracker)
     };
+
+    let lastResponse = "";
   
     for (const step of selected) {
       console.log(chalk.bold(`\n🔧 ${step.title}\n`));
@@ -58,13 +73,18 @@ export async function runPlanMode(): Promise<void> {
   
       const r = await agent.generate({prompt:stepPrompt(plan.goal , step)})
   
-      if(r.text) return console.log(renderTerminalMarkdown(r.text))
-  
+      if(r.text) {
+        lastResponse = r.text?.trim() || "";
+        console.log(renderTerminalMarkdown(lastResponse));
+      }
     }
   
     const ok = await runApprovalFlow(tracker);
   
-    if(!ok) return executor.clearStaging();
+    if(!ok) {
+        executor.clearStaging();
+        return lastResponse;
+    }
   
      const { errors } = executor.applyApprovedFromTracker();
     if (errors.length) {
@@ -74,4 +94,5 @@ export async function runPlanMode(): Promise<void> {
       console.log(chalk.green('\n✓ Applied.\n'));
     }
     executor.clearStaging();
+    return lastResponse;
   }

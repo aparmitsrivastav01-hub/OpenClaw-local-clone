@@ -10,15 +10,25 @@ import { createAgentTools } from "./agent-tools";
 import { renderTerminalMarkdown } from "../../tui/terminal-md";
 import { runApprovalFlow } from "./Approval";
 
-export async function runAgentMode() {
-    console.log(chalk.bold("\n🤖 Agent Mode\n"));
+export interface AgentModeOptions {
+    input?: string;
+    fromConversation?: boolean;
+}
 
-    const goal = await text({
-        message: "What would you like the agent to do?",
-        placeholder: "Concrete task for this codebasee..",
-    })
+export async function runAgentMode(options?: AgentModeOptions): Promise<string> {
+    if (!options?.fromConversation) {
+        console.log(chalk.bold("\n🤖 Agent Mode\n"));
+    }
 
-    if(isCancel(goal)|| !goal.trim()) return;
+    let goal = options?.input;
+    if (!goal) {
+        const prompted = await text({
+            message: "What would you like the agent to do?",
+            placeholder: "Concrete task for this codebase..",
+        });
+        if (isCancel(prompted) || !prompted.trim()) return "";
+        goal = prompted.trim();
+    }
 
     const config = defaultAgentConfig()
     const tracker = new ActionTracker()
@@ -36,7 +46,7 @@ export async function runAgentMode() {
       });
 
       const result = await agent.generate({
-        prompt: goal.trim(),
+        prompt: goal,
         onStepFinish: ({ toolCalls }) => {
           for (const tc of toolCalls) {
             const preview = JSON.stringify(tc.input).slice(0, 160);
@@ -48,10 +58,14 @@ export async function runAgentMode() {
           }
         },
       });
-      if (result.text?.trim()) console.log(renderTerminalMarkdown(result.text));
+      const responseText = result.text?.trim() || "";
+      if (responseText) console.log(renderTerminalMarkdown(responseText));
 
       const ok = await runApprovalFlow(tracker);
-      if (!ok) return executor.clearStaging();
+      if (!ok) {
+        executor.clearStaging();
+        return responseText;
+      }
     
       const { errors } = executor.applyApprovedFromTracker();
     
@@ -63,5 +77,6 @@ export async function runAgentMode() {
        console.log(chalk.green('\n✓ Applied.\n'));
       }
     
-      executor.clearStaging()
+      executor.clearStaging();
+      return responseText;
     }

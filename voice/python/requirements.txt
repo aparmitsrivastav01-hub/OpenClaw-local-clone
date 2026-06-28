@@ -1,0 +1,3 @@
+# Local Faster-Whisper STT for OpenClaw (no Docker)
+# Install: pip install -r voice/python/requirements.txt
+faster-whisper>=1.0.0
