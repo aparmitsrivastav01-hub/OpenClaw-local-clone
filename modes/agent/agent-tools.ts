@@ -2,9 +2,154 @@ import { tool } from "ai";
 import { z } from "zod";
 import type { ToolExecutor } from "./tool-executor"
 import { executeShell } from "./tools/shell-tool";
+import Firecrawl from "@mendable/firecrawl-js";
+
+// TypeScript types for web search results
+interface ScrapedPage {
+  title: string;
+  url: string;
+  markdown: string;
+  success: boolean;
+  error?: string;
+}
+
+interface WebSearchResult {
+  query: string;
+  results: ScrapedPage[];
+  totalScraped: number;
+  totalFailed: number;
+  executionTime: number;
+}
 
 export function createAgentTools(executor: ToolExecutor) {
-    return {
+    console.log("========================");
+    console.log("TOOLS REGISTERED");
+    console.log("========================");
+    
+    // Firecrawl client singleton
+    let firecrawlClient: Firecrawl | null = null;
+
+    function getFirecrawlClient(): Firecrawl {
+        if (!firecrawlClient) {
+            if (!process.env.FIRECRAWL_API_KEY) {
+                throw new Error("FIRECRAWL_API_KEY not configured");
+            }
+            firecrawlClient = new Firecrawl({
+                apiKey: process.env.FIRECRAWL_API_KEY,
+            });
+        }
+        return firecrawlClient;
+    }
+
+    function clip(s: string, n = 8000): string {
+        return s.length > n ? s.slice(0, n) + "\n…[truncated]" : s;
+    }
+
+    // Helper to scrape a single URL with error handling
+    async function scrapeUrl(url: string): Promise<ScrapedPage> {
+        try {
+            const client = getFirecrawlClient();
+            const doc = await client.scrape(url, {
+                formats: ["markdown"],
+            });
+            
+            const markdown = (doc as { markdown?: string }).markdown ?? "";
+            
+            return {
+                title: doc.metadata?.title ?? url,
+                url,
+                markdown: clip(markdown, 5000), // Clip per page to 5000 chars
+                success: true,
+            };
+        } catch (error) {
+            return {
+                title: url,
+                url,
+                markdown: "",
+                success: false,
+                error: error instanceof Error ? error.message : String(error),
+            };
+        }
+    }
+
+    // Log all registered tools
+    const tools = {
+      web_search: tool({
+        description: "Search the internet for recent or factual information. Performs Firecrawl search, then scrapes the top 3-5 pages in parallel to return full markdown content with citations. Use for latest news, current events, sports, weather, factual information unavailable in context, product information, company information, stock prices, cryptocurrency prices, and live data.",
+        inputSchema: z.object({
+          query: z.string().min(1).describe("Search query"),
+          limit: z.number().int().min(1).max(10).optional().default(5),
+          scrapeCount: z.number().int().min(1).max(5).optional().default(3).describe("Number of top pages to scrape (1-5)"),
+        }),
+        execute: async ({ query, limit, scrapeCount }) => {
+          const startTime = Date.now();
+          console.log(`[web_search] Searching for: "${query}"`);
+          
+          const client = getFirecrawlClient();
+          const res = await client.search(query, {
+            limit,
+            sources: ["web"],
+          });
+
+          const items = (res.web ?? []).slice(0, limit);
+          const urlsToScrape = items.slice(0, scrapeCount).map((d: any) => d.url).filter(Boolean);
+          
+          console.log(`[web_search] Found ${items.length} results, scraping ${urlsToScrape.length} pages`);
+          
+          // Parallel scraping
+          const scrapePromises = urlsToScrape.map(url => scrapeUrl(url));
+          const scrapedPages = await Promise.all(scrapePromises);
+          
+          const successful = scrapedPages.filter(p => p.success);
+          const failed = scrapedPages.filter(p => !p.success);
+          
+          console.log(`[web_search] Scraped ${successful.length} pages successfully, ${failed.length} failed`);
+          
+          const executionTime = Date.now() - startTime;
+          console.log(`[web_search] Completed in ${executionTime}ms`);
+          
+          // Format results for LLM
+          let output = `Search Query: ${query}\n\n`;
+          output += `Sources (${successful.length} scraped):\n\n`;
+          
+          successful.forEach((page, i) => {
+            output += `${i + 1}. ${page.title}\n   ${page.url}\n\n${page.markdown}\n\n---\n\n`;
+          });
+          
+          if (failed.length > 0) {
+            output += `\nFailed to scrape ${failed.length} pages:\n`;
+            failed.forEach((page, i) => {
+              output += `  - ${page.url}: ${page.error}\n`;
+            });
+          }
+          
+          return clip(output, 12000); // Total limit of 12000 chars
+        },
+      }),
+
+      web_scrape: tool({
+        description: "Scrape a single webpage into markdown. Use when you need the full content of a specific URL. Returns title, URL, and markdown content.",
+        inputSchema: z.object({
+          url: z.string().url().describe("URL to scrape"),
+        }),
+        execute: async ({ url }) => {
+          const startTime = Date.now();
+          console.log(`[web_scrape] Scraping: "${url}"`);
+          
+          const result = await scrapeUrl(url);
+          
+          const executionTime = Date.now() - startTime;
+          console.log(`[web_scrape] Completed in ${executionTime}ms, success: ${result.success}`);
+          
+          if (!result.success) {
+            return `Failed to scrape ${url}: ${result.error}`;
+          }
+          
+          let output = `Title: ${result.title}\nURL: ${result.url}\n\n${result.markdown}`;
+          return clip(output, 10000);
+        },
+      }),
+
       read_file: tool({
         description:
           "Read a text file from the workspace. Use a path relative to the project root.",
@@ -112,4 +257,10 @@ export function createAgentTools(executor: ToolExecutor) {
         
       })
     };
+    
+    console.log("Registered tools:");
+    Object.keys(tools).forEach(name => console.log(`- ${name}`));
+    console.log("========================");
+    
+    return tools;
   }

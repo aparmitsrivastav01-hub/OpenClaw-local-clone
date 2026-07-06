@@ -41,14 +41,31 @@ export async function runAgentMode(options?: AgentModeOptions): Promise<string> 
         instructions: [
           `Workspace root: ${config.codebasePath}`,
           "All mutations are staged until approval.",
+          "You have access to web_search and web_scrape tools for internet access.",
+          "Use web_search when you need to find URLs or general information about a topic. It searches the internet and scrapes the top 3-5 pages in parallel to return full markdown content with citations.",
+          "Use web_scrape when you need the full content of a specific URL that you already have.",
+          "Use these tools for: latest news, current events, sports, weather, factual information unavailable in context, product information, company information, stock prices, cryptocurrency prices, and live data.",
+          "Never hallucinate recent information if web_search is available. Always search for up-to-date information when the user asks about current events or time-sensitive data.",
         ].join("\n"),
         tools,
       });
 
+      console.log("========================");
+      console.log("LLM REQUEST");
+      console.log("========================");
+      console.log(`Model: ${getAgentModel()}`);
+      console.log(`Tool count: ${Object.keys(tools).length}`);
+      console.log("========================");
+
       const result = await agent.generate({
         prompt: goal,
         onStepFinish: ({ toolCalls }) => {
+          console.log("========================");
+          console.log("MODEL REQUESTED TOOL");
+          console.log("========================");
           for (const tc of toolCalls) {
+            console.log(`Tool: ${tc.toolName}`);
+            console.log(`Arguments: ${JSON.stringify(tc.input)}`);
             const preview = JSON.stringify(tc.input).slice(0, 160);
             console.log(
               chalk.green("  ✓"),
@@ -56,6 +73,7 @@ export async function runAgentMode(options?: AgentModeOptions): Promise<string> 
               chalk.dim(preview + (preview.length >= 160 ? "..." : "")),
             );
           }
+          console.log("========================");
         },
       });
       const responseText = result.text?.trim() || "";
